@@ -287,10 +287,17 @@ hr { border-color: rgba(255,255,255,0.06) !important; }
 </style>
 """, unsafe_allow_html=True)
 
+import os
+
 # ── Secrets ───────────────────────────────────────────────────────────────────
-GEMINI_API_KEY     = st.secrets["GEMINI_API_KEY"]
-GMAIL_ADDRESS      = st.secrets["GMAIL_ADDRESS"]
-GMAIL_APP_PASSWORD = st.secrets["GMAIL_APP_PASSWORD"]
+# Try Streamlit secrets first (local), fallback to OS environment variables (Render)
+GEMINI_API_KEY     = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
+GMAIL_ADDRESS      = st.secrets.get("GMAIL_ADDRESS") or os.environ.get("GMAIL_ADDRESS")
+GMAIL_APP_PASSWORD = st.secrets.get("GMAIL_APP_PASSWORD") or os.environ.get("GMAIL_APP_PASSWORD")
+
+if not GEMINI_API_KEY:
+    st.error("Missing GEMINI_API_KEY! Please set it in your environment variables.")
+    st.stop()
 
 # ── Cached client ─────────────────────────────────────────────────────────────
 @st.cache_resource
