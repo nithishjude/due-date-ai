@@ -291,9 +291,16 @@ import os
 
 # ── Secrets ───────────────────────────────────────────────────────────────────
 # Try Streamlit secrets first (local), fallback to OS environment variables (Render)
-GEMINI_API_KEY     = st.secrets.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY")
-GMAIL_ADDRESS      = st.secrets.get("GMAIL_ADDRESS") or os.environ.get("GMAIL_ADDRESS")
-GMAIL_APP_PASSWORD = st.secrets.get("GMAIL_APP_PASSWORD") or os.environ.get("GMAIL_APP_PASSWORD")
+try:
+    _local_gemini = st.secrets.get("GEMINI_API_KEY")
+    _local_gmail = st.secrets.get("GMAIL_ADDRESS")
+    _local_pass = st.secrets.get("GMAIL_APP_PASSWORD")
+except Exception:
+    _local_gemini = _local_gmail = _local_pass = None
+
+GEMINI_API_KEY     = _local_gemini or os.environ.get("GEMINI_API_KEY")
+GMAIL_ADDRESS      = _local_gmail or os.environ.get("GMAIL_ADDRESS")
+GMAIL_APP_PASSWORD = _local_pass or os.environ.get("GMAIL_APP_PASSWORD")
 
 if not GEMINI_API_KEY:
     st.error("Missing GEMINI_API_KEY! Please set it in your environment variables.")
