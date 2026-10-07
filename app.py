@@ -390,8 +390,14 @@ def send_email(to: str, name: str, summary: str) -> tuple[bool, str]:
         "plain"
     ))
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
-            s.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+        # Port 587 + STARTTLS works reliably on cloud hosts (Render, Railway, etc.)
+        # Port 465 (SMTP_SSL) is often blocked by cloud firewall rules.
+        password = (GMAIL_APP_PASSWORD or "").replace(" ", "")  # strip any stray spaces
+        with smtplib.SMTP("smtp.gmail.com", 587) as s:
+            s.ehlo()
+            s.starttls()
+            s.ehlo()
+            s.login(GMAIL_ADDRESS, password)
             s.send_message(msg)
         return True, ""
     except Exception as e:
