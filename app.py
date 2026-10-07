@@ -390,18 +390,21 @@ def send_email(to: str, name: str, summary: str) -> tuple[bool, str]:
         "plain"
     ))
     try:
-        # Port 587 + STARTTLS works reliably on cloud hosts (Render, Railway, etc.)
-        # Port 465 (SMTP_SSL) is often blocked by cloud firewall rules.
-        password = (GMAIL_APP_PASSWORD or "").replace(" ", "")  # strip any stray spaces
-        with smtplib.SMTP("smtp.gmail.com", 587) as s:
+        password = (GMAIL_APP_PASSWORD or "").replace(" ", "")
+        # 10-second timeout — fails fast instead of hanging if port is blocked
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as s:
             s.ehlo()
             s.starttls()
             s.ehlo()
             s.login(GMAIL_ADDRESS, password)
             s.send_message(msg)
         return True, ""
+    except smtplib.SMTPAuthenticationError:
+        return False, "❌ Gmail authentication failed. Please regenerate your App Password at myaccount.google.com/apppasswords and update it in Render Environment Variables."
+    except TimeoutError:
+        return False, "❌ Connection timed out — outbound email (port 587) may be blocked by the hosting provider. Try sending from localhost instead."
     except Exception as e:
-        return False, str(e)
+        return False, f"❌ {type(e).__name__}: {e}"
 
 
 # ── Gemini ────────────────────────────────────────────────────────────────────
