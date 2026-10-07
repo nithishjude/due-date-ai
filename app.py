@@ -1,8 +1,8 @@
 import re
-import smtplib
+import urllib.request
+import urllib.error
+import json
 from datetime import date
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 import streamlit as st
 from google import genai
@@ -290,17 +290,17 @@ hr { border-color: rgba(255,255,255,0.06) !important; }
 import os
 
 # ── Secrets ───────────────────────────────────────────────────────────────────
-# Try Streamlit secrets first (local), fallback to OS environment variables (Render)
 try:
-    _local_gemini = st.secrets.get("GEMINI_API_KEY")
-    _local_gmail = st.secrets.get("GMAIL_ADDRESS")
-    _local_pass = st.secrets.get("GMAIL_APP_PASSWORD")
+    _local_gemini  = st.secrets.get("GEMINI_API_KEY")
+    _local_resend  = st.secrets.get("RESEND_API_KEY")
+    _local_sender  = st.secrets.get("SENDER_EMAIL")
 except Exception:
-    _local_gemini = _local_gmail = _local_pass = None
+    _local_gemini = _local_resend = _local_sender = None
 
-GEMINI_API_KEY     = _local_gemini or os.environ.get("GEMINI_API_KEY")
-GMAIL_ADDRESS      = _local_gmail or os.environ.get("GMAIL_ADDRESS")
-GMAIL_APP_PASSWORD = _local_pass or os.environ.get("GMAIL_APP_PASSWORD")
+GEMINI_API_KEY = _local_gemini or os.environ.get("GEMINI_API_KEY")
+RESEND_API_KEY = _local_resend or os.environ.get("RESEND_API_KEY")
+# Resend requires a verified sender domain. Use 'onboarding@resend.dev' on free plan.
+SENDER_EMAIL   = _local_sender or os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
 
 if not GEMINI_API_KEY:
     st.error("Missing GEMINI_API_KEY! Please set it in your environment variables.")
@@ -379,30 +379,36 @@ def render_badges(deadlines: list[dict]) -> None:
     st.markdown(html, unsafe_allow_html=True)
 
 
-# ── Email ─────────────────────────────────────────────────────────────────────
+# ── Email via Resend HTTP API (works on all cloud hosts) ─────────────────────
 def send_email(to: str, name: str, summary: str) -> tuple[bool, str]:
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "📅 Your Deadline Digest — DeadlineSnap"
-    msg["From"]    = GMAIL_ADDRESS
-    msg["To"]      = to
-    msg.attach(MIMEText(
-        f"Hi {name},\n\nHere's your deadline digest:\n\n{summary}\n\n— DeadlineSnap 📅",
-        "plain"
-    ))
+    """Send email via Resend's HTTP API — works on Render free tier
+    since it uses HTTPS (port 443) instead of blocked SMTP ports."""
+    api_key = RESEND_API_KEY
+    if not api_key:
+        return False, "❌ RESEND_API_KEY is not set. Add it in Render → Environment Variables."
+
+    payload = json.dumps({
+        "from":    f"DeadlineSnap <{SENDER_EMAIL}>",
+        "to":      [to],
+        "subject": "📅 Your Deadline Digest — DeadlineSnap",
+        "text":    f"Hi {name},\n\nHere's your deadline digest:\n\n{summary}\n\n— DeadlineSnap 📅",
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type":  "application/json",
+        },
+        method="POST",
+    )
     try:
-        password = (GMAIL_APP_PASSWORD or "").replace(" ", "")
-        # 10-second timeout — fails fast instead of hanging if port is blocked
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as s:
-            s.ehlo()
-            s.starttls()
-            s.ehlo()
-            s.login(GMAIL_ADDRESS, password)
-            s.send_message(msg)
-        return True, ""
-    except smtplib.SMTPAuthenticationError:
-        return False, "❌ Gmail authentication failed. Please regenerate your App Password at myaccount.google.com/apppasswords and update it in Render Environment Variables."
-    except TimeoutError:
-        return False, "❌ Connection timed out — outbound email (port 587) may be blocked by the hosting provider. Try sending from localhost instead."
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status == 200, ""
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        return False, f"❌ Resend API error {e.code}: {body}"
     except Exception as e:
         return False, f"❌ {type(e).__name__}: {e}"
 
